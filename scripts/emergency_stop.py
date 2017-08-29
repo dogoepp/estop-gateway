@@ -10,9 +10,15 @@ print("Host : " + str(host))
 port = 1042 # the port we chose to listen to
 s.bind(('', port)) # bind the socket to the port
 
+suivant = 1
+
 while True:
     data, addr = s.recvfrom(1024) # buffer size is 1024 bytes
     print("received message : " + str(data))
+
+    suivant = suivant * 1103515245 + 12345
+    pulse_seed = ((suivant/65536) % 32768)
+    print("expected rand: " + str(pulse_seed))
 
 
 
