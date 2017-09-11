@@ -2,44 +2,62 @@
 # coding: utf-8
 
 import socket
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # TODO: have a look to what
-# can be done with `protocol`
 
-host = socket.gethostname() # get local machine name
-print("Host : " + str(host))
-port = 1042 # the port we chose to listen to
-s.bind(('', port)) # bind the socket to the port
-
-suivant = 1
-
-# while True:
-#     data, addr = s.recvfrom(1024) # buffer size is 1024 bytes
-#     print("received message : " + str(data))
-#
-#     suivant = suivant * 1103515245 + 12345
-#     pulse_seed = ((suivant/65536) % 32768)
-#     print("expected rand: " + str(pulse_seed))
-
-
-
+# Ros-related
 import rospy
-from std_msgs.msg import String
+from std_msgs.msg import UInt32
 
-def talker():
-    pub = rospy.Publisher('chatter', String, queue_size=10)
-    rospy.init_node('talker', anonymous=True)
-    # rate = rospy.Rate(10) # 10hz
-    while not rospy.is_shutdown():
-        data, addr = s.recvfrom(1024) # buffer size is 1024 bytes
 
-        hello_str = "hello world %s" % data
-        rospy.loginfo(hello_str)
-        pub.publish(hello_str)
+class HeartBeatGateway:
+    def __init__(self, port, timeout = 0.1, topic='pulse', queue_size=10):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # TODO: have a look to what can be done with `protocol`
 
-        # rate.sleep()
+        host = socket.gethostname() # get local machine name
+        rospy.loginfo("Host : " + str(host))
+
+        self.socket.bind(('', port)) # bind the socket to the port
+        # self.socket.settimeout(timeout) # set a timeout for the socket
+
+        self.publisher = rospy.Publisher(topic, UInt32, queue_size=queue_size)
+
+        self.suivant = 1 # seed for the pseudo-random number generator
+
+    def recieve_tick(self):
+        data = ''
+        addr = ''
+        try:
+            data, addr = self.socket.recvfrom(1024) # buffer size is 1024 bytes
+        except socket.timeout as e:
+            pass # timeout reached and no data arrived
+        except socket.error as e:
+            rospy.logerr("Socket reading triggered the following error: {}"
+                .format(e))
+
+        return data
+
+    def relay_tick(self, data):
+        try:
+            rospy.loginfo(repr(int(data.decode().strip('\0'))))
+            message = UInt32(int(data.decode().strip('\0')))
+            self.publisher.publish(message)
+        except ValueError as e:
+            rospy.logwarn(e)
+        except Exception as e:
+            rospy.logerr("There's an error: {}".format(e))
+
+
 
 if __name__ == '__main__':
     try:
-        talker()
+        rospy.init_node('talker')
+        s = HeartBeatGateway(1042, 0.1)
+        # rate = rospy.Rate(10) # 10hz
+        while not rospy.is_shutdown():
+            data = s.recieve_tick()
+
+            s.relay_tick(data)
+
+            # rate.sleep()
     except rospy.ROSInterruptException:
         pass
