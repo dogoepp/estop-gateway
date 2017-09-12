@@ -35,9 +35,6 @@ class HeartBeatGateway:
         self.suivant = 1 # seed for the pseudo-random number generator
 
     def recieve_tick(self):
-        data = ''
-        seconds = 0
-        millis = 0
         addr = ''
         decoded_data = 0
         try:
@@ -46,17 +43,10 @@ class HeartBeatGateway:
             if len(data) <> 40:
                 rospy.logerr("Data received should have 40 bytes (32 bytes for the hash and 2*4 for the time). Received {0} bytes instead.".format(len(data)))
             else:
-                # rospy.logdebug("time field of the bare data: "+bytes_to_str(data[32:]))
                 try:
-                    # (data, seconds, millis)= struct.unpack('<32sII', data)
                     decoded_data= struct.unpack('<32s8s', data)
-                    # rospy.logdebug("Data received: {0}, {1}, {2}".format(data, seconds, millis))
                 except struct.error as e:
                     rospy.logerr("Unpacking error: " + str(e))
-            # string = ''
-            # for byte in data:
-            #     string = string + hex(byte)[2:]
-            # data = string
         except socket.timeout as e:
             pass # timeout reached and no data arrived
         except socket.error as e:
@@ -64,7 +54,7 @@ class HeartBeatGateway:
                 .format(e))
             raise e
 
-        return decoded_data
+        return {"decoded data": decoded_data, "address":addr}
 
     def relay_tick(self, data):
         try:
@@ -84,8 +74,6 @@ class HeartBeatGateway:
             rospy.logerr("There's an error: {}".format(e))
 
     def check_data(self, data):
-        # rospy.loginfo(str(time))
-        # rospy.loginfo(bytes_to_str(hash_bytes))
         same = self.check_hmac(data)
         if same:
             rospy.loginfo("the messages are the same")
@@ -94,11 +82,12 @@ class HeartBeatGateway:
 
     def check_hmac(self, data):
         key = b"16:40:35"
+        h = hmac.new(key, str(data[1]), hashlib.sha256)
+
         rospy.logdebug("time is: " + bytes_to_str(data[1]))
         rospy.logdebug("hash is: " + bytes_to_str(data[0]))
-        h = hmac.new(key, str(data[1]), hashlib.sha256)
-        # h.update(str(millis))
         rospy.logdebug("local hash is: "+bytes_to_str(h.digest()))
+
         return hmac.compare_digest(h.digest(), str(data[0]))
 
 
