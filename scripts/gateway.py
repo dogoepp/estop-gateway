@@ -37,7 +37,7 @@ def median(list):
     return median
 
 class HeartBeatGateway:
-    def __init__(self, port, max_delay, timeout = 0.1, topic='pulse', queue_size=10):
+    def __init__(self, port, max_delay, timeout = 0.1, topic='pulse', queue_size=1):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # TODO: have a look to what can be done with `protocol`
 
@@ -127,13 +127,11 @@ class HeartBeatGateway:
         key = b"16:40:35"
         h = hmac.new(key, str(data[1]), hashlib.sha256)
 
-        rospy.logdebug("time is: " + bytes_to_str(data[1]))
-        rospy.logdebug("hash is: " + bytes_to_str(data[0]))
-        rospy.logdebug("local hash is: "+bytes_to_str(h.digest()))
+        # rospy.logdebug("time is: " + bytes_to_str(data[1]))
+        # rospy.logdebug("hash is: " + bytes_to_str(data[0]))
+        # rospy.logdebug("local hash is: "+bytes_to_str(h.digest()))
 
         return hmac.compare_digest(h.digest(), str(data[0]))
-
-        return min(self.past_readings)
 
 class SlidingWindow:
     """ Store a fixed number of past data and apply to them a given function.
