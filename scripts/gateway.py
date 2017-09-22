@@ -36,23 +36,57 @@ def median(list):
 
     return median
 
-class HeartBeatGateway:
-    def __init__(self, port, max_delay, timeout = 0.1, topic='pulse', queue_size=1):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # TODO: have a look to what can be done with `protocol`
+class HeartBeatGateway(object):
+    """
+        Relay heartbeat from UDP sockets to ROS.
 
-        host = socket.gethostname() # get local machine name
-        rospy.loginfo("Host : " + str(host))
+        The method :func:`recieve_tick` waits (blocking) for a message to arrive on a given port, parses it and returns the parsed data.
+
+        .. note:: We sometimes talk about pulse, instead of heartbeat. We mean the same thing.
+
+        TODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODO
+        This class will eventually only handle the reception, parsing and checking of data.
+        The rest will be caried out by a class handling the ROS node.
+        TODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODO
+    """
+    def __init__(self, port, max_delay, key, source_ip,
+                 timeout = 0.1, topic='pulse', queue_size=1):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         self.socket.bind(('', port)) # bind the socket to the port
-        # self.socket.settimeout(timeout) # set a timeout for the socket
+        # TODO: self.socket.settimeout(timeout) # set a timeout for the socket
 
+        self.source_ip = source_ip
         self.max_delay = max_delay
+        self.key = key
 
         self.publisher = rospy.Publisher(topic, UInt32, queue_size=queue_size)
 
-        # class used to parse incoming data
+        # parser for incoming data
         self.struct = struct.Struct('<32s8sf')
+
+    def __call__(self, sliding_window = (lambda x: x)):
+        try:
+            tick = s.recieve_tick()
+            rospy.logdebug("received tick")
+            if s.check_data(tick):
+                rospy.logdebug("received tick and checked")
+                battery_level = tick['decoded'][2]
+                # We have to rely on a smoothing method because the ADC
+                # (analog to digital converter) measurements are noisy, as
+                # discussed in https://github.com/esp8266/Arduino/issues/2070
+                battery_level = sliding_window(battery_level)
+
+                # s.relay_tick(data)
+                # s.relay_print(data)
+
+                rospy.loginfo("correct tick received")
+                rospy.loginfo("Battery level: {0}".format(battery_level))
+                rospy.loginfo("             : {0}".format(tick['decoded'][2]))
+            else:
+                rospy.lofingo("checking failed")
+        except socket.error:
+            pass
 
     def recieve_tick(self):
         addr = ''
@@ -77,7 +111,7 @@ class HeartBeatGateway:
                 .format(e))
             raise e
 
-        return {"decoded data": decoded_data, "address":addr}
+        return {"decoded": decoded_data, "address":addr}
 
     def relay_tick(self, data):
         try:
@@ -98,12 +132,12 @@ class HeartBeatGateway:
 
     def check_data(self, data):
         address = data['address'][0]
-        decoded_data = data['decoded data']
+        decoded_data = data['decoded']
 
         # Check message source (IP address)
-        if address != '152.81.70.17':
-            rospy.logdebug("L'ip n'est pas la bonne ({0})"
-                           .format(address))
+        if address != self.source_ip:
+            rospy.logdebug("The IP address is incorrect ({0}, {1} expected)"
+                           .format(address, self.source_ip))
             return False
 
         # Check that the message is not too old
@@ -112,28 +146,22 @@ class HeartBeatGateway:
         (timestamp,) = struct.unpack('<I', decoded_data[1][0:4])
         local_timestamp = int(math.floor(time.time()))
         if abs(timestamp - local_timestamp) > self.max_delay:
-            rospy.logdebug("The received tick is too old (by {0} seconds)"
+            rospy.logdebug("The received tick is time-shifted (by {0} seconds)"
                            .format(timestamp - local_timestamp))
             return False
 
         # Check the HMAC (TOPT)
-        if not(self.check_hmac(data['decoded data'])):
+        if not(self._check_hmac(data['decoded'])):
             rospy.logdebug("The hash of the tick is not ok")
             return False
 
         return True
 
-    def check_hmac(self, data):
-        key = b"16:40:35"
-        h = hmac.new(key, str(data[1]), hashlib.sha256)
-
-        # rospy.logdebug("time is: " + bytes_to_str(data[1]))
-        # rospy.logdebug("hash is: " + bytes_to_str(data[0]))
-        # rospy.logdebug("local hash is: "+bytes_to_str(h.digest()))
-
+    def _check_hmac(self, data):
+        h = hmac.new(self.key, str(data[1]), hashlib.sha256)
         return hmac.compare_digest(h.digest(), str(data[0]))
 
-class SlidingWindow:
+class SlidingWindow(object):
     """ Store a fixed number of past data and apply to them a given function.
 
         Our current usage is to store ten past values and either get the min of
@@ -157,28 +185,31 @@ class SlidingWindow:
 
 if __name__ == '__main__':
     try:
-        rospy.init_node('e-stop', log_level=rospy.DEBUG)
+        rospy.init_node('e_stop', anonymous=True, log_level=rospy.DEBUG)
         max_delay = 2 # seconds
-        s = HeartBeatGateway(1042, max_delay, 0.1)
+        key = b"16:40:35"
+        source_ip = '152.81.10.184'
+        s = HeartBeatGateway(1042, max_delay, key, source_ip, 0.1)
         sliding_min = SlidingWindow(median, 50)
 
         # rate = rospy.Rate(10) # 10hz
         while not rospy.is_shutdown():
-            try:
-                tick = s.recieve_tick()
-
-                # s.relay_tick(data)
-                # s.relay_print(data)
-                if s.check_data(tick):
-                    battery_level = tick['decoded data'][2]
-                    # We have to rely on a smoothing method because the ADC
-                    # (analog to digital converter) measurements are noisy, as
-                    # discussed in https://github.com/esp8266/Arduino/issues/2070
-                    battery_level = sliding_min(battery_level)
-                    rospy.loginfo("correct tick received")
-                    rospy.loginfo("Battery level: {0}".format(battery_level))
-            except socket.error:
-                pass
+            s(sliding_min)
+            # try:
+            #     tick = s.recieve_tick()
+            #
+            #     # s.relay_tick(data)
+            #     # s.relay_print(data)
+            #     if s.check_data(tick):
+            #         battery_level = tick['decoded'][2]
+            #         # We have to rely on a smoothing method because the ADC
+            #         # (analog to digital converter) measurements are noisy, as
+            #         # discussed in https://github.com/esp8266/Arduino/issues/2070
+            #         battery_level = sliding_min(battery_level)
+            #         rospy.loginfo("correct tick received")
+            #         rospy.loginfo("Battery level: {0}".format(battery_level))
+            # except socket.error:
+            #     pass
 
             # rate.sleep()
     except rospy.ROSInterruptException:
