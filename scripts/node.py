@@ -11,14 +11,16 @@ from std_msgs.msg import UInt32
 # Project imports
 import server
 
+
 class GatewayNode(object):
     def __init__(self, topic='pulse', queue_size=1):
         rospy.init_node('e_stop', anonymous=True, log_level=rospy.DEBUG)
-        max_delay = 2 # seconds
+        max_delay = 2  # seconds
         key = b"16:40:35"
         source_ip = '152.81.10.184'
         source_ip = '152.81.70.17'
-        self.server = server.HeartBeatGateway(1042, max_delay, key, source_ip, 0.1)
+        self.server = server.HeartBeatGateway(1042, max_delay,
+                                              key, source_ip, 0.1)
         self.sliding_window = server.SlidingWindow(server.median, 50)
 
         self.publisher = rospy.Publisher(topic, UInt32, queue_size=queue_size)
@@ -43,7 +45,8 @@ class GatewayNode(object):
                     battery_level = tick['decoded'][2]
                     # We have to rely on a smoothing method because the ADC
                     # (analog to digital converter) measurements are noisy, as
-                    # discussed in https://github.com/esp8266/Arduino/issues/2070
+                    # discussed in
+                    # https://github.com/esp8266/Arduino/issues/2070
                     battery_level = self.sliding_window(battery_level)
 
                     # self.relay_tick()
@@ -51,11 +54,13 @@ class GatewayNode(object):
 
                     rospy.loginfo("correct tick received")
                     rospy.loginfo("Battery level: {0}".format(battery_level))
-                    rospy.loginfo("             : {0}".format(tick['decoded'][2]))
+                    rospy.loginfo("             : {0}"
+                                  .format(tick['decoded'][2]))
                 else:
                     rospy.loginfo("The received tick is invalid.")
         except socket.error:
             pass
+
 
 class ConnectPythonLoggingToROS(logging.Handler):
     """
@@ -66,23 +71,26 @@ class ConnectPythonLoggingToROS(logging.Handler):
     """
 
     MAP = {
-        logging.DEBUG:rospy.logdebug,
-        logging.INFO:rospy.loginfo,
-        logging.WARNING:rospy.logwarn,
-        logging.ERROR:rospy.logerr,
-        logging.CRITICAL:rospy.logfatal
+        logging.DEBUG:    rospy.logdebug,
+        logging.INFO:     rospy.loginfo,
+        logging.WARNING:  rospy.logwarn,
+        logging.ERROR:    rospy.logerr,
+        logging.CRITICAL: rospy.logfatal
     }
 
     def emit(self, record):
         try:
             self.MAP[record.levelno]("%s: %s" % (record.name, record.msg))
         except KeyError:
-            rospy.logerr("unknown log level %s LOG: %s: %s" % (record.levelno, record.name, record.msg))
+            rospy.logerr("unknown log level %s LOG: %s: %s" % (record.levelno,
+                         record.name, record.msg))
+
 
 if __name__ == '__main__':
-    #reconnect logging calls which are children of this to the ros log system
+    # reconnect logging calls which are children of this to the ros log system
     logging.getLogger('server').addHandler(ConnectPythonLoggingToROS())
-    #logs sent to children of trigger with a level >= this will be redirected to ROS
+    # logs sent to children of trigger with a level >= this will be redirected
+    # to ROS
     logging.getLogger('server').setLevel(logging.DEBUG)
 
     try:

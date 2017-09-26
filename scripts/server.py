@@ -13,7 +13,8 @@ import time
 
 import logging
 
-import collections # for the circular buffer deque
+import collections  # for the circular buffer deque
+
 
 def bytes_to_str(data):
     """
@@ -32,37 +33,39 @@ def bytes_to_str(data):
         string = string + hex(byte)[2:]
     return string
 
+
 def median(list):
     median = None
     sorted_list = sorted(list)
     size = len(list)
 
-    if size % 2 == 0: # Even number of elements
+    if size % 2 == 0:  # Even number of elements
         median = (sorted_list[size/2-1] + sorted_list[size/2]) / 2
-    else:             # Odd number of elements
+    else:              # Odd number of elements
         median = sorted_list[size//2]
 
     return median
+
 
 class HeartBeatGateway(object):
     """
         Relay heartbeat from UDP sockets to ROS.
 
-        The method :func:`receive_tick` waits (blocking) for a message to arrive
-        on a given port, parses it and returns the parsed data.
+        The method :func:`receive_tick` waits (blocking) for a message to
+        arrive on a given port, parses it and returns the parsed data.
 
         .. note:: We sometimes talk about pulse, instead of heartbeat. We mean
             the same thing.
     """
 
     def __init__(self, port, max_delay, key, source_ip,
-                 timeout = 0.1):
+                 timeout=0.1):
         # Setup logging
         self._logger = logging.getLogger(__name__)
         self._logger.addHandler(logging.NullHandler())
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._socket.bind(('', port)) # bind the socket to the port
+        self._socket.bind(('', port))  # bind the socket to the port
         # TODO: self._socket.settimeout(timeout) # set a timeout for the socket
         self._logger.debug("Listening on port {}".format(port))
 
@@ -93,33 +96,34 @@ class HeartBeatGateway(object):
         decoded_data = 0
 
         try:
-            data, addr = self._socket.recvfrom(1024) # buffer size is 1024 bytes
+            data, addr = self._socket.recvfrom(1024)  # buffer size is 1024 B
             data = bytearray(data)
             # Did we receive the right number of bytes ?
             if len(data) == self.struct.size:
                 try:
-                    decoded_data= self.struct.unpack(data)
+                    decoded_data = self.struct.unpack(data)
                 except struct.error as e:
-                    self._logger.error("The following error arrised on processing"
-                    "(struct.unpack) a message from emergency stop: " + str(e))
-                    return {"decoded": None, "address":addr}
+                    self._logger.error("The following error arrised on "
+                                       "processing (struct.unpack) a message "
+                                       "from emergency stop: " + str(e))
+                    return {"decoded": None, "address": addr}
             else:
                 self._logger.warn("Received {0} bytes instead of {1} bytes "
-                    "(32 bytes for the hash, 2*4 for the time, 4 for the "
-                    "battery level)."
-                    .format(len(data), self.struct.size))
-                return {"decoded": None, "address":addr}
-        except socket.timeout as e: # TODO: remove if timeout not used
-            pass # timeout reached and no data arrived
+                                  "(32 bytes for the hash, 2*4 for the time, "
+                                  "4 for the battery level)."
+                                  .format(len(data), self.struct.size))
+                return {"decoded": None, "address": addr}
+        except socket.timeout as e:  # TODO: remove if timeout not used
+            pass  # timeout reached and no data arrived
         except socket.error as e:
-            # Error number 4 is for interrupted system call, which happends when
-            # we close the programm. It is not a problem
+            # Error number 4 is for interrupted system call, which happends
+            # when we close the programm. It is not a problem
             if 4 != e.errno:
-                self._logger.error("Socket reading triggered the following error: {}"
-                    .format(e))
-            return {"decoded": None, "address":('', '')}
+                self._logger.error("Socket reading triggered the following "
+                                   "error: {}".format(e))
+            return {"decoded": None, "address": ('', '')}
 
-        return {"decoded": decoded_data, "address":addr}
+        return {"decoded": decoded_data, "address": addr}
 
     def relay_tick(self, data):
         try:
@@ -162,8 +166,8 @@ class HeartBeatGateway(object):
 
         # Check message source (IP address)
         if address != self.source_ip:
-            self._logger.debug("The IP address is incorrect ({0}, expected {1})"
-                           .format(address, self.source_ip))
+            self._logger.debug("The IP address is incorrect ({0}, "
+                               "expected {1})".format(address, self.source_ip))
             return False
 
         # Authenticate the sender, by checking the HMAC (TOPT)
@@ -174,8 +178,8 @@ class HeartBeatGateway(object):
         # Check that the message is not too old or too young (in seconds)
         diff = self._compare_time(decoded_data)
         if abs(diff) > self.max_delay:
-            self._logger.info("The received tick is time-shifted (by {0} seconds)"
-                           .format(diff))
+            self._logger.info("The received tick is time-shifted "
+                              "(by {0} seconds)".format(diff))
             return False
 
         return True
@@ -217,10 +221,12 @@ class HeartBeatGateway(object):
         except TypeError:
             return False
 
-        # This timestamp is local in the sense that it is retrieved from the host OS.
+        # This timestamp is local in the sense that it is retrieved from the
+        # host OS.
         local_timestamp = int(math.floor(time.time()))
 
         return timestamp - local_timestamp
+
 
 class SlidingWindow(object):
     """ Store a fixed number of past data and apply to them a given function.
@@ -228,9 +234,9 @@ class SlidingWindow(object):
         Our current usage is to store ten past values and either get the min of
         them or the average.
 
-        TODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODO
+        TODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODO
         make this class a subclass of collections.deque
-        TODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODO
+        TODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODOTODO
     """
 
     def __init__(self, operator, size):
