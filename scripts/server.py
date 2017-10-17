@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # coding: utf-8
 
 # network communication
@@ -51,7 +51,7 @@ class HeartBeatGateway(object):
     """
         Relay heartbeat from UDP sockets to ROS.
 
-        The method :func:`receive_tick` waits (blocking) for a message to
+        The method :func:`receive_heartbeat` waits (blocking) for a message to
         arrive on a given port, parses it and returns the parsed data.
 
         .. note:: We sometimes talk about pulse, instead of heartbeat. We mean
@@ -74,9 +74,9 @@ class HeartBeatGateway(object):
         self.key = key
 
         # parser for incoming data
-        self.struct = struct.Struct('<32s8sf')
+        self.struct = struct.Struct('<32sIIf')
 
-    def receive_tick(self):
+    def receive_heartbeat(self):
         """
         Wait for a message from the emergency stop, and process it.
 
@@ -85,34 +85,24 @@ class HeartBeatGateway(object):
         When a new frame arrives, we check that it has the right size. Then its
         data are unpacked and returned, along with the sender's IP address.
 
-        :return: dictionnary of the shape
-            `{"decoded": decoded_data, "address":addr}`
-            where `decoded_data` is a tuple with a 32-bytes string, an 8-bytes
-            string and a float; `addr` represents the sender's address, as
-            returned by methods of the `socket` module.
+        :return: dictionnary with keys 'hash', 's', 'ms', 'charge' and
+            'address', unless there was a problem with the message. In that
+            case, some fields might be missing. Types of the fields :
+            - 'hash' is a 32-bytes string
+            - 's' and 'ms' each are 4-bytes integers
+            - 'rtime' is the raw 8-byte concatentation of seconds and milliseconds
+            - 'charge' is a float
+            - `address` represents the sender's address, as returned by methods of
+                the `socket` module.
         """
 
-        addr = ''
-        decoded_data = 0
+        decoded_data = {}
 
         try:
-            data, addr = self._socket.recvfrom(1024)  # buffer size is 1024 B
+            data, decoded_data["address"] = self._socket.recvfrom(1024)  # buffer size is 1024 B
             data = bytearray(data)
-            # Did we receive the right number of bytes ?
-            if len(data) == self.struct.size:
-                try:
-                    decoded_data = self.struct.unpack(data)
-                except struct.error as e:
-                    self._logger.error("The following error arrised on "
-                                       "processing (struct.unpack) a message "
-                                       "from emergency stop: " + str(e))
-                    return {"decoded": None, "address": addr} # TODO: remove "decoded" from these dictionaries
-            else:
-                self._logger.warn("Received {0} bytes instead of {1} bytes "
-                                  "(32 bytes for the hash, 2*4 for the time, "
-                                  "4 for the battery level)."
-                                  .format(len(data), self.struct.size))
-                return {"decoded": None, "address": addr}
+            self.unpack_data(decoded_data, data)
+            decoded_data['rtime'] = data[32:40]
         except socket.timeout as e:  # TODO: remove if timeout not used
             pass  # timeout reached and no data arrived
         except socket.error as e:
@@ -121,19 +111,26 @@ class HeartBeatGateway(object):
             if 4 != e.errno:
                 self._logger.error("Socket reading triggered the following "
                                    "error: {}".format(e))
-            return {"decoded": None, "address": ('', '')}
 
-        return {"decoded": decoded_data, "address": addr}
+        return decoded_data
 
-    def relay_tick(self, data):
-        try:
-            self._logger.info(repr(int(data.decode().strip('\0'))))
-            message = UInt32(int(data.decode().strip('\0')))
-            self.publisher.publish(message)
-        except ValueError as e:
-            self._logger.warn(e)
-        except Exception as e:
-            self._logger.error("There's an error: {}".format(e))
+    def unpack_data(self, decoded_data, data):
+        # Did we receive the right number of bytes ?
+        if len(data) == self.struct.size:
+            try:
+                decoded = self.struct.unpack(data)
+                # put the unpacked data in a dictionary
+                field_names = ("hash", "s", "ms", "charge")
+                decoded_data.update(dict(zip(field_names, decoded)))
+            except struct.error as e:
+                self._logger.error("The following error arrised on "
+                                   "processing (struct.unpack) a message "
+                                   "from emergency stop: " + str(e))
+        else:
+            self._logger.warn("Received {0} bytes instead of {1} bytes "
+                              "(32 bytes for the hash, 2*4 for the time, "
+                              "4 for the battery level)."
+                              .format(len(data), self.struct.size))
 
     def relay_print(self, data):
         try:
@@ -152,16 +149,15 @@ class HeartBeatGateway(object):
         * time discrepency between emission and reception of the message not
             too big
 
-        :param data: output of :func:`receive_tick`
+        :param data: output of :func:`receive_heartbeat`
         :return: None if the data has no content,
                  True when all tests pass
         """
 
         address = data['address'][0]
-        decoded_data = data['decoded']
 
         # Check that we received valid data
-        if decoded_data is None:
+        if data is None:
             return None
 
         # Check message source (IP address)
@@ -171,14 +167,14 @@ class HeartBeatGateway(object):
             return False
 
         # Authenticate the sender, by checking the HMAC (TOPT)
-        if not self._check_hmac(decoded_data):
-            self._logger.debug("The hash of the tick is not ok")
+        if not self._check_hmac(data):
+            self._logger.debug("The hash of the heartbeat is not ok")
             return False
 
         # Check that the message is not too old or too young (in seconds)
-        diff = self._compare_time(decoded_data)
+        diff = self._compare_time(data)
         if abs(diff) > self.max_delay:
-            self._logger.info("The received tick is time-shifted "
+            self._logger.info("The received heartbeat is time-shifted "
                               "(by {0} seconds)".format(diff))
             return False
 
@@ -193,14 +189,18 @@ class HeartBeatGateway(object):
         message.
 
         :param data: "decoded" entry in the dictionary returned by
-            `receive_tick`
+            `receive_heartbeat`
         :return: True when the two hashes match
         """
 
-        h = hmac.new(self.key, str(data[1]), hashlib.sha256)
-        return hmac.compare_digest(h.digest(), str(data[0]))
+        if 'rtime' in data:
+            time = data['rtime']
+            h = hmac.new(self.key, time, hashlib.sha256)
+            return hmac.compare_digest(h.digest(), str(data['hash']))
+        else:
+            return False
 
-    def _compare_time(self, decoded_data):
+    def _compare_time(self, data):
         """
         Compute the difference between the message timestamp and the local
         timestamp.
@@ -209,23 +209,20 @@ class HeartBeatGateway(object):
         (in UTC). The computation is based on timestamps to the resolution of
         one second.
 
-        :param data: the output of receive_tick
+        :param data: the output of receive_heartbeat
         :return: difference between time in the message and host's time, in
             seconds
         """
-
-        # in decoded_data, seconds and milliseconds are not separated, we do
-        # this separation here and take only the seconds.
-        try:
-            (timestamp,) = struct.unpack('<I', decoded_data[1][0:4])
-        except TypeError:
-            return False
 
         # This timestamp is local in the sense that it is retrieved from the
         # host OS.
         local_timestamp = int(math.floor(time.time()))
 
-        return timestamp - local_timestamp
+        if 's' in data:
+            timestamp = data['s']
+            return timestamp  - local_timestamp
+        else:
+            return local_timestamp
 
 
 class SlidingWindow(object):
@@ -253,3 +250,41 @@ class SlidingWindow(object):
 
     def append(self, data):
         self.window.append(data)
+
+
+if __name__ == "__main__":
+    # Calls to make the logs appear in the terminal
+    sh = logging.StreamHandler()
+    logging.getLogger('__main__').addHandler(sh)
+    # logging.getLogger('__main__').setLevel(logging.DEBUG)
+
+    max_delay = 2  # seconds
+    key = b"16:40:35"
+    # source_ip = '152.81.10.184'
+    source_ip = '152.81.70.17'
+    sliding_window = SlidingWindow(median, 50)
+
+    server = HeartBeatGateway(1042, max_delay, key, source_ip, 0.1)
+    while(True):
+        try:
+            heartbeat = server.receive_heartbeat()
+
+            # Check that we did receive data
+            if "hash" in heartbeat:
+                # Check the data's validity
+                if server.check_data(heartbeat):
+                    battery_level = heartbeat['charge']
+                    # We have to rely on a smoothing method because the ADC
+                    # (analog to digital converter) measurements are noisy, as
+                    # discussed in
+                    # https://github.com/esp8266/Arduino/issues/2070
+                    battery_level = sliding_window(battery_level)
+
+                    print("correct heartbeat received")
+                    print("Battery level: {0}".format(battery_level))
+                    print("             : {0}"
+                                  .format(heartbeat['charge']))
+                else:
+                    print("invalid heartbeat received")
+        except socket.error:
+            pass

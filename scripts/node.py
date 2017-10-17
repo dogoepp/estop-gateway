@@ -18,7 +18,7 @@ class GatewayNode(object):
         rospy.init_node('estop_heartbeat_udp', anonymous=anonymous, log_level=rospy.DEBUG)
         max_delay = 2  # seconds
         key = b"16:40:35"
-        source_ip = '152.81.10.184'
+        # source_ip = '152.81.10.184'
         source_ip = '152.81.70.17'
         self.server = server.HeartBeatGateway(1042, max_delay,
                                               key, source_ip, 0.1)
