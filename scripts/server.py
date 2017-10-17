@@ -106,7 +106,7 @@ class HeartBeatGateway(object):
                     self._logger.error("The following error arrised on "
                                        "processing (struct.unpack) a message "
                                        "from emergency stop: " + str(e))
-                    return {"decoded": None, "address": addr}
+                    return {"decoded": None, "address": addr} # TODO: remove "decoded" from these dictionaries
             else:
                 self._logger.warn("Received {0} bytes instead of {1} bytes "
                                   "(32 bytes for the hash, 2*4 for the time, "
