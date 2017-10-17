@@ -3,18 +3,19 @@
 
 # Standard
 import logging
+import socket
 
 # Ros-related
 import rospy
-from std_msgs.msg import UInt32
+from estop_gateway_udp.msg import Heartbeat
 
 # Project imports
 import server
 
 
 class GatewayNode(object):
-    def __init__(self, topic='pulse', queue_size=1):
-        rospy.init_node('e_stop', anonymous=True, log_level=rospy.DEBUG)
+    def __init__(self, topic='~heartbeat', queue_size=1, anonymous=False):
+        rospy.init_node('estop_heartbeat_udp', anonymous=anonymous, log_level=rospy.DEBUG)
         max_delay = 2  # seconds
         key = b"16:40:35"
         source_ip = '152.81.10.184'
@@ -23,7 +24,7 @@ class GatewayNode(object):
                                               key, source_ip, 0.1)
         self.sliding_window = server.SlidingWindow(server.median, 50)
 
-        self.publisher = rospy.Publisher(topic, UInt32, queue_size=queue_size)
+        self.publisher = rospy.Publisher(topic, Heartbeat, queue_size=queue_size)
 
     def run(self):
         try:
@@ -49,7 +50,8 @@ class GatewayNode(object):
                     # https://github.com/esp8266/Arduino/issues/2070
                     battery_level = self.sliding_window(battery_level)
 
-                    # self.relay_tick()
+                    secs = tick["decoded"]
+                    self.relay_tick()
                     # self.send_battery_status()
 
                     rospy.loginfo("correct tick received")
@@ -61,6 +63,9 @@ class GatewayNode(object):
         except socket.error:
             pass
 
+    def relay_tick(self, secs, nsecs, hash):
+        message = Heartbeat()
+        self.publisher.publish(message)
 
 class ConnectPythonLoggingToROS(logging.Handler):
     """
