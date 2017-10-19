@@ -20,18 +20,14 @@ def bytes_to_str(data):
     """
     Represents the bytes in `data` as a string of hexadecimal pairs.
 
-    Exemple output: "2AFC" for an input which first byte corresponds to 0x2A
+    Exemple output: "2a:fc" for an input which first byte corresponds to 0x2A
         and the second 0xFC
 
     :param data: string of bytes
     :return: string representing `data` in hexadecimal
     """
 
-    string = ''
-    data = bytearray(data)
-    for byte in data:
-        string = string + hex(byte)[2:]
-    return string
+    return ":".join("{:02x}".format(ord(c)) for c in data)
 
 
 def median(list):
