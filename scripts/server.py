@@ -54,7 +54,7 @@ class HeartBeatGateway(object):
             the same thing.
     """
 
-    def __init__(self, port, max_delay, key, source_ip,
+    def __init__(self, port, max_delay, key, relay_key, source_ip,
                  timeout=0.1):
         # Setup logging
         self._logger = logging.getLogger(__name__)
@@ -68,9 +68,13 @@ class HeartBeatGateway(object):
         self.source_ip = source_ip
         self.max_delay = max_delay
         self.key = key
+        self.relay_key = relay_key
 
         # parser for incoming data
         self.struct = struct.Struct('<32sIHf')
+
+        self.previous_count = 0
+        self.previous_s = 0
 
     def receive_heartbeat(self):
         """
@@ -269,11 +273,12 @@ if __name__ == "__main__":
 
     max_delay = 2  # seconds
     key = b"16:40:35"
+    relay_key = b"08:36:55"
     # source_ip = '152.81.10.184'
     source_ip = '152.81.70.17'
     sliding_window = SlidingWindow(median, 50)
 
-    server = HeartBeatGateway(1042, max_delay, key, source_ip, 0.1)
+    server = HeartBeatGateway(1042, max_delay, key, relay_key, source_ip, 0.1)
     while(True):
         try:
             heartbeat = server.receive_heartbeat()

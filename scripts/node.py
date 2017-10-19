@@ -18,10 +18,11 @@ class GatewayNode(object):
         rospy.init_node('estop_heartbeat_udp', anonymous=anonymous, log_level=rospy.DEBUG)
         max_delay = 2  # seconds
         key = b"16:40:35"
+        relay_key = b"08:36:55"
         # source_ip = '152.81.10.184'
         source_ip = '152.81.70.17'
         self.server = server.HeartBeatGateway(1042, max_delay,
-                                              key, source_ip, 0.1)
+                                              key, relay_key, source_ip, 0.1)
         self.sliding_window = server.SlidingWindow(server.median, 50)
 
         self.publisher = rospy.Publisher(topic, Heartbeat, queue_size=queue_size)
@@ -50,8 +51,7 @@ class GatewayNode(object):
                     # https://github.com/esp8266/Arduino/issues/2070
                     battery_level = self.sliding_window(battery_level)
 
-                    secs = tick["decoded"]
-                    self.relay_tick()
+                    self.relay_heartbeat(heartbeat)
                     # self.send_battery_status()
 
                     rospy.loginfo("correct heartbeat received")
@@ -71,8 +71,20 @@ class GatewayNode(object):
         except socket.error:
             pass
 
-    def relay_tick(self, secs, nsecs, hash):
+    def relay_heartbeat(self, heartbeat):
+        self.server.relay_heartbeat(heartbeat)
         message = Heartbeat()
+        message.header.stamp = rospy.Time(heartbeat['s'])
+        message.header.frame_id = "0"
+        message.count = heartbeat['count']
+        message.hash = heartbeat['relay_hash']
+        # TODO: This logging call is a hack, remove it
+        # self.server._logger.info("Sending heartbet:\n\thash {},\n\ttime {} s,"
+        #                     "\n\tcount {}".format(
+        #                         server.bytes_to_str(heartbeat['relay_hash']),
+        #                         heartbeat['s'],
+        #                         heartbeat['count']
+        #                     ))
         self.publisher.publish(message)
 
 class ConnectPythonLoggingToROS(logging.Handler):
