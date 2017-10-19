@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 
-key = "1234"
+key = "08:36:55"
 message = "message"
 
 h = hmac.new(key, message, hashlib.sha256)
