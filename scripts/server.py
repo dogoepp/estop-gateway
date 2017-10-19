@@ -157,11 +157,12 @@ class HeartBeatGateway(object):
         """
         Check that the message received is valid.
 
-        This implies three tests:
+        This implies four tests:
         * sender IP address
         * authentication of the sender (with HMAC)
         * time discrepency between emission and reception of the message not
             too big
+        * the message has never been seen before
 
         :param data: output of :func:`receive_heartbeat`
         :return: None if the data has no content,
@@ -176,21 +177,30 @@ class HeartBeatGateway(object):
 
         # Check message source (IP address)
         if address != self.source_ip:
-            self._logger.debug("The IP address is incorrect ({0}, "
-                               "expected {1})".format(address, self.source_ip))
+            self._logger.warn("The sender's IP address is incorrect ({0}, "
+                               "accepted {1}).".format(address, self.source_ip))
             return False
 
         # Authenticate the sender, by checking the HMAC (TOPT)
         if not self._check_hmac(data):
-            self._logger.debug("The hash of the heartbeat is not ok")
+            self._logger.warn("The hash of the heartbeat is not ok.")
             return False
 
         # Check that the message is not too old or too young (in seconds)
         diff = self._compare_time(data)
         if abs(diff) > self.max_delay:
-            self._logger.info("The received heartbeat is time-shifted "
-                              "(by {0} seconds)".format(diff))
+            self._logger.warn("The received heartbeat is time-shifted "
+                              "(by {0} seconds).".format(diff))
             return False
+
+        # Check that the message was not received twice
+        if not self._check_count_increment(data, self.previous_count, self.previous_s):
+            self._logger.warn("The counter of the received heartbeat is "
+                "incorrect")
+            return False
+
+        self.previous_count = int(data['count'])
+        self.previous_s = int(data['s'])
 
         return True
 
@@ -222,7 +232,7 @@ class HeartBeatGateway(object):
         (in UTC). The computation is based on timestamps to the resolution of
         one second.
 
-        :param data: the output of receive_heartbeat
+        :param data: the output of `receive_heartbeat`
         :return: difference between time in the message and host's time, in
             seconds
         """
@@ -237,6 +247,27 @@ class HeartBeatGateway(object):
         else:
             return local_timestamp
 
+    def _check_count_increment(self, data, previous_count, previous_s):
+        """
+        Check that the 'count' field is bigger than the previous value.
+
+        The field 'count' is reset to 0 at each new second. Until the next
+        second, all messages should have an increasing value for 'count'.
+
+        This method makes sure of that.
+
+        :param data: data provided by `receive_heartbeat`
+        :param previous_count: last 'count' value
+        :param previous_s: value of 's' that was given in the last valid
+            heartbeat
+        :return: True when we respect the above-described rule
+        """
+
+        min_count = 0 if int(data['s']) > previous_s else previous_count + 1
+        if data['count'] >= min_count:
+            return True
+        else:
+            return False
 
 class SlidingWindow(object):
     """ Store a fixed number of past data and apply to them a given function.
