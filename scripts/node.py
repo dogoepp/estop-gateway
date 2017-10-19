@@ -35,15 +35,15 @@ class GatewayNode(object):
 
     def process_message(self):
         try:
-            tick = self.server.receive_tick()
+            heartbeat = self.server.receive_heartbeat()
 
             # Check that we did receive data
-            if tick["decoded"] is not None:
-                rospy.logdebug("received tick")
+            if len(heartbeat) > 1:
+                rospy.logdebug("received heartbeat")
 
                 # Check the data's validity
-                if self.server.check_data(tick):
-                    battery_level = tick['decoded'][2]
+                if self.server.check_data(heartbeat):
+                    battery_level = heartbeat['charge']
                     # We have to rely on a smoothing method because the ADC
                     # (analog to digital converter) measurements are noisy, as
                     # discussed in
@@ -54,12 +54,20 @@ class GatewayNode(object):
                     self.relay_tick()
                     # self.send_battery_status()
 
-                    rospy.loginfo("correct tick received")
-                    rospy.loginfo("Battery level: {0}".format(battery_level))
-                    rospy.loginfo("             : {0}"
-                                  .format(tick['decoded'][2]))
+                    rospy.loginfo("correct heartbeat received")
+                    rospy.logdebug("Battery level: {0}".format(battery_level))
+                    rospy.logdebug("             : {0}"
+                                  .format(heartbeat['charge']))
                 else:
-                    rospy.loginfo("The received tick is invalid.")
+                    rospy.logwarn("An invalid heartbeat has been received: "
+                        "source IP: {ip} "
+                        "seconds: {s} "
+                        "counter: {c} "
+                        "hash: {h}.".format(
+                            ip=heartbeat['address'][0], s=heartbeat['s'],
+                            c=heartbeat['count'],
+                            h=server.bytes_to_str(heartbeat['hash'])
+                            ))
         except socket.error:
             pass
 

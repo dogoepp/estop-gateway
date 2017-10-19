@@ -70,7 +70,7 @@ class HeartBeatGateway(object):
         self.key = key
 
         # parser for incoming data
-        self.struct = struct.Struct('<32sIIf')
+        self.struct = struct.Struct('<32sIHf')
 
     def receive_heartbeat(self):
         """
@@ -81,12 +81,13 @@ class HeartBeatGateway(object):
         When a new frame arrives, we check that it has the right size. Then its
         data are unpacked and returned, along with the sender's IP address.
 
-        :return: dictionnary with keys 'hash', 's', 'ms', 'charge' and
+        :return: dictionnary with keys 'hash', 's', 'count', 'charge' and
             'address', unless there was a problem with the message. In that
             case, some fields might be missing. Types of the fields :
             - 'hash' is a 32-bytes string
-            - 's' and 'ms' each are 4-bytes integers
-            - 'rtime' is the raw 8-byte concatentation of seconds and milliseconds
+            - 's' and 'count' 4-bytes and 2-bytes positive integers
+            - 'rpayload' is the raw 6-byte concatentation of the two variables used
+                to compute the hash
             - 'charge' is a float
             - `address` represents the sender's address, as returned by methods of
                 the `socket` module.
@@ -98,7 +99,7 @@ class HeartBeatGateway(object):
             data, decoded_data["address"] = self._socket.recvfrom(1024)  # buffer size is 1024 B
             data = bytearray(data)
             self.unpack_data(decoded_data, data)
-            decoded_data['rtime'] = data[32:40]
+            decoded_data['rpayload'] = data[32:38]
         except socket.timeout as e:  # TODO: remove if timeout not used
             pass  # timeout reached and no data arrived
         except socket.error as e:
@@ -116,8 +117,16 @@ class HeartBeatGateway(object):
             try:
                 decoded = self.struct.unpack(data)
                 # put the unpacked data in a dictionary
-                field_names = ("hash", "s", "ms", "charge")
+                field_names = ("hash", "s", "count", "charge")
                 decoded_data.update(dict(zip(field_names, decoded)))
+
+                self._logger.debug("Received data:\n\thash {},\n\ttime {} s,"
+                                    "\n\tcount {}\n\tcharge {} %".format(
+                                        bytes_to_str(decoded_data['hash']),
+                                        decoded_data['s'],
+                                        decoded_data['count'],
+                                        decoded_data['charge']
+                                    ))
             except struct.error as e:
                 self._logger.error("The following error arrised on "
                                    "processing (struct.unpack) a message "
@@ -127,6 +136,11 @@ class HeartBeatGateway(object):
                               "(32 bytes for the hash, 2*4 for the time, "
                               "4 for the battery level)."
                               .format(len(data), self.struct.size))
+
+    def relay_heartbeat(self, data):
+        payload = struct.pack('<IH', data['s'], data['count'])
+        data['relay_hash'] = hmac.new(self.relay_key, payload, hashlib.sha256).digest()
+        return data
 
     def relay_print(self, data):
         try:
@@ -184,13 +198,12 @@ class HeartBeatGateway(object):
         shared secret key. Then, we compare this hash with the one in the
         message.
 
-        :param data: "decoded" entry in the dictionary returned by
-            `receive_heartbeat`
+        :param data: data provided by `receive_heartbeat`
         :return: True when the two hashes match
         """
 
-        if 'rtime' in data:
-            time = data['rtime']
+        if 'rpayload' in data:
+            time = data['rpayload']
             h = hmac.new(self.key, time, hashlib.sha256)
             return hmac.compare_digest(h.digest(), str(data['hash']))
         else:
