@@ -262,10 +262,16 @@ class HeartBeatGateway(object):
             heartbeat
         :return: True when we respect the above-described rule
         """
+        current_s = int(data['s'])
 
-        min_count = 0 if int(data['s']) > previous_s else previous_count + 1
-        if data['count'] >= min_count:
-            return True
+        # We cannot accept to go back in time
+        if current_s >= previous_s:
+            min_count = 0 if current_s > previous_s else previous_count + 1
+            # For a given second, the counter must be increasing
+            if data['count'] >= min_count:
+                return True
+            else:
+                return False
         else:
             return False
 
@@ -289,8 +295,9 @@ class SlidingWindow(object):
             self.window.append(data)
         return self.operator(self.window)
 
-    def compute(self, data):
-        return self.__apply__(data)
+    # TODO: remove this
+    # def compute(self, data):
+    #     return self.__apply__(data)
 
     def append(self, data):
         self.window.append(data)

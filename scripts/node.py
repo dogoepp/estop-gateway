@@ -54,7 +54,7 @@ class GatewayNode(object):
                     self.relay_heartbeat(heartbeat)
                     # self.send_battery_status()
 
-                    rospy.loginfo("correct heartbeat received")
+                    rospy.logdebug("correct heartbeat received")
                     rospy.logdebug("Battery level: {0}".format(battery_level))
                     rospy.logdebug("             : {0}"
                                   .format(heartbeat['charge']))
@@ -116,7 +116,8 @@ if __name__ == '__main__':
     logging.getLogger('server').addHandler(ConnectPythonLoggingToROS())
     # logs sent to children of trigger with a level >= this will be redirected
     # to ROS
-    logging.getLogger('server').setLevel(logging.DEBUG)
+    
+    # logging.getLogger('server').setLevel(logging.DEBUG)
 
     try:
         node = GatewayNode()
