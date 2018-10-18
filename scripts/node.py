@@ -7,7 +7,7 @@ import socket
 
 # Ros-related
 import rospy
-from estop_gateway_udp.msg import Heartbeat
+from estop_gateway.msg import Heartbeat
 
 # Project imports
 import server

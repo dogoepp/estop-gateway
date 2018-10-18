@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package>
-  <name>estop_gateway_udp</name>
+  <name>estop_gateway</name>
   <version>0.0.1</version>
   <description>validate and relay heartbeats from an UDP source to ROS</description>
   <author email="dorian.goepp@inria.fr">Dorian Goepp</author>

@@ -160,7 +160,7 @@ class HeartBeatGateway(object):
         This implies four tests:
         * sender IP address
         * authentication of the sender (with HMAC)
-        * time discrepency between emission and reception of the message not
+        * time discrepancy between emission and reception of the message not
             too big
         * the message has never been seen before
 
